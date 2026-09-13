@@ -1,4 +1,4 @@
-name: Build iOS Tweak (.deb)
+name: Build HideDeveloperMode (com.hid.dev)
 
 on:
   push:
@@ -9,69 +9,63 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-14
-    strategy:
-      matrix:
-        scheme: [rootless, roothide]
 
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Set Environment Variables
+      - name: Install dependencies
         run: |
+          brew install ldid dpkg
+
+      - name: Setup RootHide Theos & iOS SDKs
+        run: |
+          git clone --recursive https://github.com/roothide/theos.git $HOME/theos
+          curl -fsSL https://github.com/theos/sdks/archive/master.zip -o sdks.zip
+          unzip -q sdks.zip
+          mv sdks-master/*.sdk $HOME/theos/sdks/
+          rm -rf sdks.zip sdks-master
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: Setup Theos
-        run: |
-          git clone --recursive https://github.com/roothide/theos.git $THEOS
-
-      - name: Setup iOS SDK
-        run: |
-          mkdir -p $THEOS/sdks
-          curl -LO https://github.com/theos/sdks/releases/download/v16.5/iPhoneOS16.5.sdk.tar.xz || curl -LO https://github.com/xybp888/iOS-SDKs/releases/download/16.5/iPhoneOS16.5.sdk.tar.xz
-          tar -xf iPhoneOS16.5.sdk.tar.xz -C $THEOS/sdks/
-          rm -f iPhoneOS16.5.sdk.tar.xz
-
-      - name: Build Package (${{ matrix.scheme }})
-        run: |
-          make clean
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=${{ matrix.scheme }}
-
-      - name: Rename Output DEB
+      - name: Build RootHide deb
         run: |
           mkdir -p output
-          for file in packages/*.deb; do
-            filename=$(basename "$file")
-            cp "$file" "output/${{ matrix.scheme }}_$filename"
+          make clean
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide
+          for f in packages/*.deb; do
+            [ -e "$f" ] || continue
+            cp "$f" "output/roothide_$(basename "$f")"
           done
 
-      - name: Upload Artifact (${{ matrix.scheme }})
+      - name: Build Rootless deb
+        run: |
+          rm -rf packages
+          make clean
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+          for f in packages/*.deb; do
+            [ -e "$f" ] || continue
+            cp "$f" "output/rootless_$(basename "$f")"
+          done
+
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: com_hid_dev_${{ matrix.scheme }}
+          name: hidedev-packages
           path: output/*.deb
           if-no-files-found: error
 
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download All Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: all-debs
-          merge-multiple: true
-
       - name: Create Release
         uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: all-debs/*.deb
-          generate_release_notes: true
+          files: output/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -2,7 +2,7 @@ Package: com.hid.dev
 Name: HideDeveloperMode (Anti-DevMode)
 Version: 1.0.0
 Architecture: iphoneos-arm64
-Description: Spoof & Hide iOS 16 Developer Mode from Banking & KYC Apps (ACB, VNeID, etc.)
+Description: Spoof & Hide iOS 16 Developer Mode & SSH
 Maintainer: CodeByWin
 Author: CodeByWin
 Section: Tweaks

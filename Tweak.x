@@ -11,6 +11,9 @@
 #import <dlfcn.h>
 #import <CoreFoundation/CoreFoundation.h>
 #import <sys/stat.h>
+#import <sys/socket.h>
+#import <netinet/in.h>
+#import <arpa/inet.h>
 #import <unistd.h>
 #import <errno.h>
 
@@ -41,33 +44,73 @@ static int fake_amfi_developer_mode_enabled(void) {
 
 static int (*orig_access)(const char *path, int mode) = NULL;
 static int fake_access(const char *path, int mode) {
-    if (path && strstr(path, "com.apple.security.developer-mode")) {
-        errno = ENOENT;
-        return -1;
+    if (path) {
+        if (strstr(path, "com.apple.security.developer-mode")) {
+            errno = ENOENT;
+            return -1;
+        }
+        // Chặn quét file cấu hình OpenSSH
+        if (strstr(path, "sshd") || strstr(path, "openssh") || strstr(path, "/etc/ssh")) {
+            errno = ENOENT;
+            return -1;
+        }
     }
     return orig_access ? orig_access(path, mode) : -1;
 }
 
 static int (*orig_stat)(const char *path, struct stat *buf) = NULL;
 static int fake_stat(const char *path, struct stat *buf) {
-    if (path && strstr(path, "com.apple.security.developer-mode")) {
-        errno = ENOENT;
-        return -1;
+    if (path) {
+        if (strstr(path, "com.apple.security.developer-mode")) {
+            errno = ENOENT;
+            return -1;
+        }
+        // Chặn quét file cấu hình OpenSSH
+        if (strstr(path, "sshd") || strstr(path, "openssh") || strstr(path, "/etc/ssh")) {
+            errno = ENOENT;
+            return -1;
+        }
     }
     return orig_stat ? orig_stat(path, buf) : -1;
 }
 
 static int (*orig_lstat)(const char *path, struct stat *buf) = NULL;
 static int fake_lstat(const char *path, struct stat *buf) {
-    if (path && strstr(path, "com.apple.security.developer-mode")) {
-        errno = ENOENT;
-        return -1;
+    if (path) {
+        if (strstr(path, "com.apple.security.developer-mode")) {
+            errno = ENOENT;
+            return -1;
+        }
+        // Chặn quét file cấu hình OpenSSH
+        if (strstr(path, "sshd") || strstr(path, "openssh") || strstr(path, "/etc/ssh")) {
+            errno = ENOENT;
+            return -1;
+        }
     }
     return orig_lstat ? orig_lstat(path, buf) : -1;
 }
 
 // ============================================================================
-// 3. C Hooks: CoreFoundation Preferences (CFPreferences)
+// 3. C Hooks: Socket connect() (Chặn quét cổng OpenSSH 22 & 2222)
+// ============================================================================
+
+static int (*orig_connect)(int sockfd, const struct sockaddr *addr, socklen_t addrlen) = NULL;
+static int fake_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+    if (addr && addr->sa_family == AF_INET) {
+        struct sockaddr_in *in_addr = (struct sockaddr_in *)addr;
+        int port = ntohs(in_addr->sin_port);
+        // Nếu app thử kết nối tới port 22 hoặc 2222 trên 127.0.0.1 (localhost)
+        if ((port == 22 || port == 2222) &&
+            (in_addr->sin_addr.s_addr == htonl(INADDR_LOOPBACK))) {
+            errno = ECONNREFUSED; // Giả lập: Cổng bị đóng, không có dịch vụ SSH!
+            return -1;
+        }
+    }
+    return orig_connect ? orig_connect(sockfd, addr, addrlen) : -1;
+}
+
+// ============================================================================
+// 4. C Hooks: CoreFoundation Preferences (CFPreferences)
 // ============================================================================
 
 static CFPropertyListRef (*orig_CFPreferencesCopyAppValue)(CFStringRef key, CFStringRef applicationID) = NULL;
@@ -123,7 +166,7 @@ static CFIndex fake_CFPreferencesGetAppIntegerValue(CFStringRef key, CFStringRef
 }
 
 // ============================================================================
-// 4. C Hooks: Security Framework (Spoof get-task-allow / Chống phát hiện debug)
+// 5. C Hooks: Security Framework (Spoof get-task-allow / Chống phát hiện debug)
 // ============================================================================
 
 static CFTypeRef (*orig_SecTaskCopyValueForEntitlement)(void *task, CFStringRef entitlement, CFErrorRef *error) = NULL;
@@ -136,7 +179,7 @@ static CFTypeRef fake_SecTaskCopyValueForEntitlement(void *task, CFStringRef ent
 }
 
 // ============================================================================
-// 5. Objective-C Hooks: NSFileManager & NSUserDefaults
+// 6. Objective-C Hooks: NSFileManager & NSUserDefaults
 // ============================================================================
 
 %hook NSFileManager
@@ -187,7 +230,7 @@ static CFTypeRef fake_SecTaskCopyValueForEntitlement(void *task, CFStringRef ent
 %end
 
 // ============================================================================
-// 6. Constructor Khởi Tạo An Toàn
+// 7. Constructor Khởi Tạo An Toàn
 // ============================================================================
 
 %ctor {
@@ -268,6 +311,12 @@ static CFTypeRef fake_SecTaskCopyValueForEntitlement(void *task, CFStringRef ent
         void *symSecTask = dlsym(RTLD_DEFAULT, "SecTaskCopyValueForEntitlement");
         if (symSecTask) {
             MSHookFunction(symSecTask, (void *)&fake_SecTaskCopyValueForEntitlement, (void **)&orig_SecTaskCopyValueForEntitlement);
+        }
+
+        // 5. Hook socket connect() (chặn quét cổng SSH 22 & 2222 trên localhost)
+        void *symConnect = dlsym(RTLD_DEFAULT, "connect");
+        if (symConnect) {
+            MSHookFunction(symConnect, (void *)&fake_connect, (void **)&orig_connect);
         }
     }
 }

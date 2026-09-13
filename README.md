@@ -1,6 +1,6 @@
 # HideDeveloperMode (`com.hid.dev`)
 
-Tweak iOS 16 chuyên dụng ẩn và giả lập **Chế độ nhà phát triển (Developer Mode = OFF)** cho các ứng dụng ngân hàng và tài chính (ACB ONE, Techcombank, VNeID, v.v.).
+Tweak iOS 16 chuyên dụng ẩn và giả lập **Chế độ nhà phát triển (Developer Mode = OFF)**
 
 ## 🚀 Tính Năng
 1. **Hook AMFI APIs (`libamfi` & `libSystem`)**:
@@ -16,4 +16,4 @@ Tweak iOS 16 chuyên dụng ẩn và giả lập **Chế độ nhà phát triể
 
 ## 📱 Cài Đặt
 Cài đặt file `.deb` qua **Sileo** hoặc **Filza**, sau đó Respring lại thiết bị.
-Mở app ngân hàng (ACB ONE) và đăng nhập bình thường!
+
